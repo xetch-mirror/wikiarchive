@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wiki Archive</title>
+<style>
+  :root{--bg:#fff;--page:#fff;--panel:#f6f6f6;--border:#a2a9b1;--text:#202122;--link:#0645ad;--accent:#3366cc;--muted:#54595d;--header-bg:#f8f9fa;}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){--bg:#101418;--page:#101418;--panel:#1a1d22;--border:#3a3d42;--text:#eaecf0;--link:#8ab4f8;--accent:#8ab4f8;--muted:#a2a9b1;--header-bg:#171b20;}
+  }
+  :root[data-theme="dark"]{--bg:#101418;--page:#101418;--panel:#1a1d22;--border:#3a3d42;--text:#eaecf0;--link:#8ab4f8;--accent:#8ab4f8;--muted:#a2a9b1;--header-bg:#171b20;}
+  html,body{height:100%;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Helvetica Neue',Arial,sans-serif;font-size:14px;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+  header{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:10;}
+  .logo{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--text);}
+  .logo svg{display:block;}
+  .logo-text{font-family:'Linux Libertine','Georgia',serif;font-size:1.4rem;line-height:1;}
+  input[type=text]{flex:1;min-width:140px;padding:7px 10px;border:1px solid var(--border);border-radius:2px;background:var(--page);color:var(--text);font-size:0.9rem;}
+  button{font-family:inherit;font-size:0.85rem;padding:7px 14px;border:1px solid var(--border);border-radius:2px;background:var(--panel);color:var(--text);cursor:pointer;}
+  button:hover{border-color:var(--accent);background:var(--bg);}
+  .layout{max-width:1100px;margin:0 auto;display:flex;align-items:flex-start;}
+  #sidebar{width:180px;flex:none;padding:16px 10px;border-right:1px solid var(--border);font-size:0.8rem;}
+  #sidebar h3{font-size:0.75rem;text-transform:uppercase;color:var(--muted);margin:0 0 8px;}
+  #sidebar a{display:block;color:var(--link);text-decoration:none;padding:3px 0;}
+  #sidebar a:hover{text-decoration:underline;}
+  main{flex:1;min-width:0;padding:20px 24px 60px;}
+  article h2{border-bottom:1px solid var(--border);padding-bottom:6px;margin-top:0;font-family:'Linux Libertine','Georgia',serif;font-size:1.8rem;font-weight:normal;}
+  article p{line-height:1.6;}
+  article a{color:var(--link);}
+  .infobox{float:right;width:260px;margin:0 0 14px 20px;border:1px solid var(--border);background:var(--panel);padding:8px;font-size:0.85rem;}
+  .infobox .ib-title{text-align:center;font-weight:bold;background:var(--header-bg);padding:6px;margin-bottom:8px;}
+  .infobox img{display:block;width:100%;border:1px solid var(--border);background:var(--page);margin-bottom:8px;}
+  .infobox p{margin:0;line-height:1.5;}
+  textarea{width:100%;font-family:monospace;font-size:0.9rem;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:2px;padding:10px;margin-bottom:12px;}
+  #editBody{min-height:240px;} #editSummary{min-height:70px;}
+  label.lbl{display:block;font-weight:bold;margin:8px 0 4px;}
+  .toolbar{display:flex;gap:8px;margin:10px 0 16px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);padding-bottom:10px;clear:both;}
+  .muted{color:var(--muted);font-size:0.85rem;}
+  input[type=file]{font-size:0.8rem;}
+  #body{overflow:hidden;}
+  #sidebar h3:not(:first-child){margin-top:16px;}
+  .cats{clear:both;border:1px solid var(--border);background:var(--panel);padding:6px 10px;margin-top:20px;font-size:0.85rem;}
+  .cats a{color:var(--link);}
+  #ioBox{min-height:260px;}
+  ul.list{line-height:1.8;}
+  ul.list a{color:var(--link);}
+  @media (max-width:640px){
+    #sidebar{display:none;} main{padding:16px;}
+    .infobox{float:none;width:100%;margin:0 0 14px;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="#" id="homeLink">
+    <svg width="38" height="38" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="2"/>
+      <line x1="50" y1="4" x2="50" y2="96" stroke="currentColor" stroke-width="1.5"/>
+      <line x1="4" y1="50" x2="96" y2="50" stroke="currentColor" stroke-width="1.5"/>
+      <ellipse cx="50" cy="50" rx="46" ry="18" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <ellipse cx="50" cy="50" rx="46" ry="32" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="50" y="57" font-family="Georgia, serif" font-size="34" text-anchor="middle" fill="currentColor">A</text>
+    </svg>
+    <span class="logo-text">Wiki Archive</span>
+  </a>
+  <input type="text" id="searchBox" placeholder="Search or open article title...">
+  <button id="goBtn">Go</button>
+  <button id="newBtn">New Article</button>
+  <button id="catsBtn">Categories</button>
+  <button id="importBtn">Import</button>
+  <button id="exportBtn">Export</button>
+</header>
+<div class="layout">
+  <nav id="sidebar"><h3>Articles</h3></nav>
+  <main><article id="content"></article></main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
