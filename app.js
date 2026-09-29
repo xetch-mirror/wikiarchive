@@ -1,4 +1,30 @@
 const STORE_KEY = "wikiArchivePages_v1";
+const API = 'https://wikiapi.wikiteam.workers.dev/api/pages';
+let remote = {};
+
+async function syncRemote(){
+  let token = localStorage.getItem('wikiToken');
+  const changed = Object.keys(pages).filter(t => !isLocked(t) && JSON.stringify(pages[t]) !== remote[t]);
+  const gone = Object.keys(remote).filter(t => !has(pages, t));
+  if(!changed.length && !gone.length) return;
+  if(!token){
+    token = prompt('Admin token (Cancel to save only in this browser):');
+    if(!token) return;
+  }
+  const headers = {authorization: 'Bearer ' + token, 'content-type': 'application/json'};
+  try{
+    for(const t of changed){
+      const r = await fetch(API + '/' + encodeURIComponent(t), {method: 'PUT', headers, body: JSON.stringify(pages[t])});
+      if(r.status === 401){ localStorage.removeItem('wikiToken'); return; }
+      if(r.ok) remote[t] = JSON.stringify(pages[t]);
+    }
+    for(const t of gone){
+      const r = await fetch(API + '/' + encodeURIComponent(t), {method: 'DELETE', headers});
+      if(r.ok) delete remote[t];
+    }
+    localStorage.setItem('wikiToken', token);
+  }catch(e){}
+}
 
 const seedPages = {
   "Main Page": {
@@ -133,7 +159,6 @@ function normalizePage(v){
     cats: cleanCats(v.cats)
   };
 }
-
 function normalizeAll(obj){
   const out = {};
   if(!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
@@ -160,6 +185,7 @@ function loadPages(){
   return withLocked(normalizeAll(seedPages));
 }
 function savePages(){
+  syncRemote();
   try{
     const out = {};
     Object.keys(pages).forEach(t => { if(!isLocked(t)) out[t] = pages[t]; });
@@ -238,7 +264,7 @@ function infobox(title, p){
   if(!p.img && !p.summary) return '';
   return `<aside class="infobox"><div class="ib-title">${escapeHtml(title)}</div>` +
     (p.img ? `<img src="${escapeHtml(p.img)}" alt="${escapeHtml(title)}">` : '') +
-   (p.summary ? `<p>${escapeHtml(p.summary).replace(/\n/g, '<br>')}</p>` : '') + `</aside>`;
+    (p.summary ? `<p>${escapeHtml(p.summary).replace(/\n/g, '<br>')}</p>` : '') + `</aside>`;
 }
 
 /* ---------- article views ---------- */
@@ -403,7 +429,6 @@ function showExport(){
   };
   window.scrollTo(0, 0);
 }
-
 function showImport(){
   $('content').innerHTML = `
     <h2>Import</h2>
@@ -477,3 +502,12 @@ $('exportBtn').onclick = showExport;
 
 renderSidebar();
 openPage('Main Page');
+fetch(API).then(r => r.json()).then(data => {
+  const inc = normalizeAll(data);
+  if(!Object.keys(inc).length) return;
+  remote = {};
+  Object.keys(inc).forEach(t => remote[t] = JSON.stringify(inc[t]));
+  pages = withLocked(inc);
+  renderSidebar();
+  openPage('Main Page');
+}).catch(() => {});
