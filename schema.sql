@@ -1,0 +1,7 @@
+CREATE TABLE pages (
+  title TEXT PRIMARY KEY,
+  summary TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  img TEXT,
+  cats TEXT NOT NULL DEFAULT '[]'
+);
