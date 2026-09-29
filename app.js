@@ -1,28 +1,27 @@
 const STORE_KEY = "wikiArchivePages_v1";
-const API = 'https://wikiapi.wikiteam.workers.dev/api/pages';
+/* Set this to your Worker's address (ending in /api). */
+const API_BASE = 'https://wikiapi.wikiteam.workers.dev/api';
+const API = API_BASE + '/pages';
 let remote = {};
 
 async function syncRemote(){
-  let token = localStorage.getItem('wikiToken');
+  const token = window.wikiAuth && wikiAuth.token();
+  if(!token) return;   // not logged in: changes stay in this browser only
   const changed = Object.keys(pages).filter(t => !isLocked(t) && JSON.stringify(pages[t]) !== remote[t]);
   const gone = Object.keys(remote).filter(t => !has(pages, t));
   if(!changed.length && !gone.length) return;
-  if(!token){
-    token = prompt('Admin token (Cancel to save only in this browser):');
-    if(!token) return;
-  }
   const headers = {authorization: 'Bearer ' + token, 'content-type': 'application/json'};
   try{
     for(const t of changed){
       const r = await fetch(API + '/' + encodeURIComponent(t), {method: 'PUT', headers, body: JSON.stringify(pages[t])});
-      if(r.status === 401){ localStorage.removeItem('wikiToken'); return; }
+      if(r.status === 401){ wikiAuth.clear(); return; }
       if(r.ok) remote[t] = JSON.stringify(pages[t]);
     }
     for(const t of gone){
       const r = await fetch(API + '/' + encodeURIComponent(t), {method: 'DELETE', headers});
+      if(r.status === 401){ wikiAuth.clear(); return; }
       if(r.ok) delete remote[t];
     }
-    localStorage.setItem('wikiToken', token);
   }catch(e){}
 }
 
@@ -159,6 +158,7 @@ function normalizePage(v){
     cats: cleanCats(v.cats)
   };
 }
+
 function normalizeAll(obj){
   const out = {};
   if(!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
@@ -266,7 +266,6 @@ function infobox(title, p){
     (p.img ? `<img src="${escapeHtml(p.img)}" alt="${escapeHtml(title)}">` : '') +
     (p.summary ? `<p>${escapeHtml(p.summary).replace(/\n/g, '<br>')}</p>` : '') + `</aside>`;
 }
-
 /* ---------- article views ---------- */
 function openPage(title){
   const el = $('content');
@@ -282,6 +281,7 @@ function openPage(title){
     <div class="toolbar">
       ${locked ? '<span class="muted">🔒 This article is locked and cannot be edited or deleted.</span>' : `
       <button id="editBtn">Edit</button>
+      <button id="histBtn">History</button>
       <button id="delBtn">Delete</button>
       <label class="muted">📷 <input type="file" id="imgInput" accept="image/*"></label>
       ${p.img ? '<button id="rmImgBtn">Remove image</button>' : ''}`}
@@ -293,6 +293,7 @@ function openPage(title){
   window.scrollTo(0, 0);
   if(locked) return;
   $('editBtn').onclick = () => editPage(title);
+  $('histBtn').onclick = () => window.showHistory && showHistory(title);
   $('imgInput').onchange = e => handleImage(e, title);
   if(p.img) $('rmImgBtn').onclick = () => { p.img = null; savePages(); openPage(title); };
   $('delBtn').onclick = function(){
@@ -429,6 +430,7 @@ function showExport(){
   };
   window.scrollTo(0, 0);
 }
+
 function showImport(){
   $('content').innerHTML = `
     <h2>Import</h2>
@@ -500,14 +502,23 @@ $('catsBtn').onclick = openCategories;
 $('importBtn').onclick = showImport;
 $('exportBtn').onclick = showExport;
 
+function loadRemote(){
+  return fetch(API).then(r => r.json()).then(data => {
+    const inc = normalizeAll(data);
+    if(!Object.keys(inc).length) return;
+    remote = {};
+    Object.keys(inc).forEach(t => remote[t] = JSON.stringify(inc[t]));
+    pages = withLocked(inc);
+    renderSidebar();
+  }).catch(() => {});
+}
+
+['login.js', 'signup.js', 'history.js'].forEach(f => {
+  const sc = document.createElement('script');
+  sc.src = f; sc.async = false;
+  document.head.appendChild(sc);
+});
+
 renderSidebar();
 openPage('Main Page');
-fetch(API).then(r => r.json()).then(data => {
-  const inc = normalizeAll(data);
-  if(!Object.keys(inc).length) return;
-  remote = {};
-  Object.keys(inc).forEach(t => remote[t] = JSON.stringify(inc[t]));
-  pages = withLocked(inc);
-  renderSidebar();
-  openPage('Main Page');
-}).catch(() => {});
+loadRemote().then(() => openPage('Main Page'));
