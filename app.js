@@ -238,7 +238,7 @@ function infobox(title, p){
   if(!p.img && !p.summary) return '';
   return `<aside class="infobox"><div class="ib-title">${escapeHtml(title)}</div>` +
     (p.img ? `<img src="${escapeHtml(p.img)}" alt="${escapeHtml(title)}">` : '') +
-    (p.summary ? `<p>${escapeHtml(p.summary)}</p>` : '') + `</aside>`;
+   (p.summary ? `<p>${escapeHtml(p.summary).replace(/\n/g, '<br>')}</p>` : '') + `</aside>`;
 }
 
 /* ---------- article views ---------- */
