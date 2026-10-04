@@ -23,12 +23,19 @@ BCC, a small C compiler/interpreter derived from c4
 zim ("Z Improved"), a vi-style text editor
 coreutils, ttar ("Tiny tar") and zsub (a Brainfuck interpreter) for the userland
 Ports of Lua, SQLite and chibicc (as ZCC) to run on Zythos
+
 Credits
+
 Created by: [User]
+
 Built on: Cloudflare Workers and D1
+
 Password hashing: the Web Crypto API (PBKDF2)
+
 Some parts written with help from: Claude, by Anthropic
+
 Thanks to: everyone who tries it, forks it and sends fixes
+
 Wiki Archive is open source. If you build something with it, I'd love to see it.
 
 We are sorry for using AI, we just don't know many of JavaScript
