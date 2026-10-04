@@ -1,11 +1,13 @@
-// Wiki Archive API: Cloudflare Worker + D1 (SQL).
-// Bindings needed: DB (D1 database). Optional variable: ALLOWED_ORIGIN.
-
 const enc = new TextEncoder();
 const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 const randHex = n => hex(crypto.getRandomValues(new Uint8Array(n)));
 const sha256 = async s => hex(await crypto.subtle.digest('SHA-256', enc.encode(s)));
 const now = () => Math.floor(Date.now() / 1000);
+
+const HOUR = 3600;
+const ADMIN_IDLE = 12 * HOUR;
+const ADMIN_MAX = 7 * 86400;
+const USER_IDLE = 30 * 86400;
 
 async function hashPassword(password, saltHex){
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -31,20 +33,77 @@ async function readJson(request, max){
   }catch(e){ return null; }
 }
 
+async function lockedFor(env, keys){
+  const t = now();
+  let wait = 0;
+  for(const k of keys){
+    const r = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key = ?').bind(k).first();
+    if(r && r.locked_until > t) wait = Math.max(wait, r.locked_until - t);
+  }
+  return wait;
+}
+
+async function recordFail(env, key, limit, maxLock){
+  const t = now();
+  await env.DB.prepare('DELETE FROM login_attempts WHERE last < ? AND locked_until < ?')
+    .bind(t - 86400, t).run();
+  const r = await env.DB.prepare('SELECT fails, level, last FROM login_attempts WHERE key = ?').bind(key).first();
+  let fails = r ? r.fails : 0;
+  let level = r ? r.level : 0;
+  if(r && t - r.last > HOUR) fails = 0;
+  if(r && t - r.last > 86400) level = 0;
+  fails++;
+  let lock = 0;
+  if(fails >= limit){
+    level++;
+    lock = Math.min(900 * Math.pow(2, level - 1), maxLock);
+    fails = 0;
+  }
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO login_attempts (key, fails, level, locked_until, last) VALUES (?, ?, ?, ?, ?)')
+    .bind(key, fails, level, lock ? t + lock : 0, t).run();
+  return lock;
+}
+
+async function clearFails(env, keys){
+  for(const k of keys){
+    await env.DB.prepare('DELETE FROM login_attempts WHERE key = ?').bind(k).run();
+  }
+}
+
 async function newSession(env, user){
   const token = randHex(32);
-  await env.DB.prepare('DELETE FROM sessions WHERE expires < ?').bind(now()).run();
-  await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires) VALUES (?, ?, ?)')
-    .bind(await sha256(token), user.id, now() + 30 * 86400).run();
+  const t = now();
+  await env.DB.prepare('DELETE FROM sessions WHERE expires < ?').bind(t).run();
+  await env.DB.prepare('INSERT INTO sessions (token_hash, user_id, expires, created) VALUES (?, ?, ?, ?)')
+    .bind(await sha256(token), user.id, t + (user.is_admin ? ADMIN_IDLE : USER_IDLE), t).run();
   return {token, user: {username: user.username, admin: !!user.is_admin}};
 }
 
 async function who(request, env){
   const m = (request.headers.get('authorization') || '').match(/^Bearer (.+)$/);
   if(!m) return null;
-  return await env.DB.prepare(
-    'SELECT u.id, u.username, u.is_admin FROM sessions s JOIN users u ON u.id = s.user_id ' +
-    'WHERE s.token_hash = ? AND s.expires > ?').bind(await sha256(m[1]), now()).first();
+  const th = await sha256(m[1]);
+  const t = now();
+  const s = await env.DB.prepare(
+    'SELECT u.id, u.username, u.is_admin, s.created, s.expires FROM sessions s ' +
+    'JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires > ?').bind(th, t).first();
+  if(!s) return null;
+  const created = s.created || (s.expires - USER_IDLE);
+  let expires = t + (s.is_admin ? ADMIN_IDLE : USER_IDLE);
+  if(s.is_admin){
+    const cap = created + ADMIN_MAX;
+    if(t >= cap){
+      await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(th).run();
+      return null;
+    }
+    expires = Math.min(expires, cap);
+  }
+  if(!s.created || Math.abs(expires - s.expires) > 300){
+    await env.DB.prepare('UPDATE sessions SET expires = ?, created = ? WHERE token_hash = ?')
+      .bind(expires, created, th).run();
+  }
+  return {id: s.id, username: s.username, is_admin: s.is_admin};
 }
 
 async function route(request, env, json){
@@ -82,12 +141,24 @@ async function route(request, env, json){
   if(method === 'POST' && name === 'login'){
     const b = await readJson(request, 5000);
     if(!b) return json({error: 'Bad request'}, 400);
+    const uname = String(b.username || '').trim();
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const kPair = 'p:' + uname.toLowerCase().slice(0, 40) + '|' + ip;
+    const kAcct = 'a:' + uname.toLowerCase().slice(0, 40);
+    const wait = await lockedFor(env, [kPair, kAcct]);
+    if(wait) return json({error: 'Too many failed attempts.', retryAfter: wait}, 429);
     const u = await env.DB.prepare(
       'SELECT id, username, salt, hash, is_admin FROM users WHERE username = ?')
-      .bind(String(b.username || '').trim()).first();
-    // always hash, so unknown usernames take the same time as wrong passwords
+      .bind(uname).first();
     const hash = await hashPassword(String(b.password || '').slice(0, 200), u ? u.salt : '00'.repeat(16));
-    if(!u || !same(hash, u.hash)) return json({error: 'Wrong username or password'}, 401);
+    if(!u || !same(hash, u.hash)){
+      const l1 = await recordFail(env, kPair, 3, 86400);
+      const l2 = await recordFail(env, kAcct, 10, HOUR);
+      const lock = Math.max(l1, l2);
+      if(lock) return json({error: 'Too many failed attempts.', retryAfter: lock}, 429);
+      return json({error: 'Wrong username or password'}, 401);
+    }
+    await clearFails(env, [kPair, kAcct]);
     return json(await newSession(env, u));
   }
 
@@ -118,9 +189,37 @@ async function route(request, env, json){
     return json(results);
   }
 
-  // everything below needs a login
   const user = await who(request, env);
   if(!user) return json({error: 'Log in to edit'}, 401);
+
+  if(method === 'POST' && name === 'change-password'){
+    const b = await readJson(request, 5000);
+    if(!b) return json({error: 'Bad request'}, 400);
+    const oldPw = String(b.oldPassword || '').slice(0, 200);
+    const newPw = String(b.newPassword || '');
+    if(newPw.length < 8 || newPw.length > 200)
+      return json({error: 'Password must be 8-200 characters'}, 400);
+    if(newPw === oldPw)
+      return json({error: 'Choose a password different from the current one'}, 400);
+    const key = 'c:' + user.id;
+    const wait = await lockedFor(env, [key]);
+    if(wait) return json({error: 'Too many failed attempts.', retryAfter: wait}, 429);
+    const row = await env.DB.prepare('SELECT salt, hash FROM users WHERE id = ?').bind(user.id).first();
+    const check = await hashPassword(oldPw, row.salt);
+    if(!same(check, row.hash)){
+      const lock = await recordFail(env, key, 3, 86400);
+      if(lock) return json({error: 'Too many failed attempts.', retryAfter: lock}, 429);
+      return json({error: 'Current password is wrong'}, 401);
+    }
+    await clearFails(env, [key]);
+    const salt = randHex(16);
+    const hash = await hashPassword(newPw, salt);
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET salt = ?, hash = ? WHERE id = ?').bind(salt, hash, user.id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id)
+    ]);
+    return json({ok: true, ...(await newSession(env, user))});
+  }
 
   const savePage = (t, p) => [
     env.DB.prepare('INSERT OR REPLACE INTO pages (title, summary, body, img, cats) VALUES (?, ?, ?, ?, ?)')
@@ -150,7 +249,6 @@ async function route(request, env, json){
     return json({ok: true});
   }
 
-  // admin only
   if(!user.is_admin) return json({error: 'Admins only'}, 403);
 
   if(method === 'DELETE' && name === 'pages' && title){
