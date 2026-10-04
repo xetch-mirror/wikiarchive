@@ -15,7 +15,9 @@ wikiapi is a Worker that sits between the site and the database.
 wikiarchive is a Worker that serves your actual website files.
 # Get Started
 Want your own copy? You only need a free Cloudflare account. Follow the full walkthrough in guide.md. It covers the database, the API, login security, edit history, the site, and troubleshooting, all from the dashboard with no terminal.
+
 More Projects
+
 If you enjoyed this one, come and see what else I'm building, especially the Zythos series.
 Zythos is a custom operating system written in C for x86, with its own two-stage BIOS bootloader, kernel, FAT32 support and a small shell. It's open source under GPL-2.0: github.com/xetch-mirror/Zythos
 Around it there's a whole family of tools, all living under the organization:
